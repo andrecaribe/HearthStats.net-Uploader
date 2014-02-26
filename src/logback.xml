@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration debug="true" scan="true" scanPeriod="5 seconds">
+
+	<appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+			<pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{80} - %msg%n</pattern>
+        </encoder>
+	</appender>
+
+    <appender name="PERF" class="ch.qos.logback.core.FileAppender">
+        <file>/Users/charlie/IdeaProjects/HearthStats.net-Uploader-gtch/build/perflog.txt</file>
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS},[%thread],%msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <logger name="net.hearthstats.performance" level="DEBUG">
+        <appender-ref ref="PERF" />
+    </logger>
+
+    <logger name="net.hearthstats" 			level="DEBUG" />
+	<logger name="org.rococoa" 			    level="DEBUG" />
+
+	<root level="DEBUG">
+		<appender-ref ref="STDOUT" />
+	</root>
+
+</configuration>
