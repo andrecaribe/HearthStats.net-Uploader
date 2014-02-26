@@ -1,27 +1,18 @@
 package net.hearthstats;
 
-import java.awt.Container;
-import java.awt.Desktop;
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStreamReader;
+import com.boxysystems.jgoogleanalytics.FocusPoint;
+import com.boxysystems.jgoogleanalytics.JGoogleAnalyticsTracker;
+
+import javax.swing.*;
+import java.awt.*;
+import java.io.*;
 import java.net.MalformedURLException;
 import java.net.URI;
-import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.channels.Channels;
 import java.nio.channels.ReadableByteChannel;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
-
-import javax.swing.JOptionPane;
-
-import com.boxysystems.jgoogleanalytics.FocusPoint;
-import com.boxysystems.jgoogleanalytics.JGoogleAnalyticsTracker;
 
 public class Updater {
 
@@ -49,16 +40,16 @@ public class Updater {
 			_notify("Performing Update", "v" + getAvailableVersion() + " downloaded ... extracting ...");
 			_extractZip();
 			_restoreSettings();
-		} catch (IOException e) {
+		} catch (Exception e) {
 			e.printStackTrace();
 			_notifyException(e);
 		}
 
 		_notify("Closing Updater ...");
 
-		_runMain();
+        _runMain();
 
-		System.exit(0);
+        System.exit(0);
 	}
 
 	public static void cleanUp() {
@@ -78,30 +69,73 @@ public class Updater {
 
 		System.out.println("trying to run updater");
 
-		_notify("Performing Update", "Extracting and running updater ...");
+        _notify("Performing Update", "Extracting and running updater ...");
 
-		File updaterFile = new File("updater.jar");
-		Main.copyFileFromJarTo("/" + updaterFile.getPath(), updaterFile.getPath());
-		if (updaterFile.exists()) {
-			System.out.println("found updater.jar");
-			try {
-				Runtime.getRuntime().exec("java -jar " + updaterFile.getPath());
-			} catch (IOException e) {
-				e.printStackTrace();
-				_notifyException(e);
-			}
-		} else {
-			Main.showMessageDialog("Unable to locate " + updaterFile.getPath() + "\n\nYou will now be taken to the download page.");
-			try {
-				Desktop.getDesktop().browse(new URI("http://hearthstats.net/uploader"));
-			}catch (Exception e) {
-				Main.logException(e);
-			}
-			_notify("Updator Error", "Unable to locate " + updaterFile.getPath());
-		}
-		System.exit(0);
+        String errorMessage = null;
 
+        if (Config.os == Config.OS.WINDOWS) {
+
+            File updaterFile = new File("updater.jar");
+            Main.copyFileFromJarTo("/" + updaterFile.getPath(), updaterFile.getPath());
+
+            if (updaterFile.exists()) {
+                System.out.println("found updater.jar");
+                try {
+                    Runtime.getRuntime().exec("java -jar " + updaterFile.getPath());
+                } catch (IOException e) {
+                    e.printStackTrace();
+                    _notifyException(e);
+                }
+            } else {
+                errorMessage = "Unable to locate " + updaterFile.getPath();
+            }
+
+        } else if (Config.os == Config.OS.OSX) {
+
+            File updaterFile = new File(Main.getExtractionFolder() + "/updater.jar");
+            Main.copyFileFromJarTo("/updater.jar", updaterFile.getPath());
+
+            if (updaterFile.exists()) {
+                System.out.println("found updater.jar");
+
+                // The Java library path is /<folder>/HearthStats.app/Contents/MacOS
+                File javaLibraryPath = new File(Config.getJavaLibraryPath());
+                // The bundle path is the folder where the bundle is stored, ie /<folder> (not including the HearthStats.app folder)
+                File bundlePath = javaLibraryPath.getParentFile().getParentFile().getParentFile();
+
+                String javaHome = System.getProperty("java.home");
+                String[] command = new String[] {
+                        javaHome + "/bin/java",
+                        "-Dhearthstats.location=" + bundlePath.getAbsolutePath(),
+                        "-jar",
+                        updaterFile.getPath()
+                };
+
+                try {
+                    Runtime.getRuntime().exec(command);
+                } catch (IOException e) {
+                    e.printStackTrace();
+                    _notifyException(e);
+                }
+            } else {
+                errorMessage = "Unable to locate " + updaterFile.getPath();
+            }
+
+        }
+
+        if (errorMessage != null) {
+            Main.showMessageDialog(errorMessage + "\n\nYou will now be taken to the download page.");
+            try {
+                Desktop.getDesktop().browse(new URI("http://hearthstats.net/uploader"));
+            }catch (Exception e) {
+                Main.logException(e);
+            }
+            _notify("Updater Error", errorMessage);
+        }
+
+        System.exit(0);
 	}
+
 
 	public static void _saveSettings() {
 		_savedUserKey = Config.getUserKey();
@@ -116,7 +150,15 @@ public class Updater {
 		File updateZip = new File(Main.getExtractionFolder() + "/update.zip");
 
 		if (updateZip.isFile()) {
-			_unZipIt(updateZip.getPath(), "./");
+            switch (Config.os) {
+                case WINDOWS:
+                    _unZipIt(updateZip.getPath(), "./");
+                    break;
+                case OSX:
+                    String hearthstatsLocation = System.getProperty("hearthstats.location");
+                    _unZipIt(updateZip.getPath(), hearthstatsLocation);
+                    break;
+            }
 		} else {
 			_notify("Updater Error", "Unable to locate " + updateZip.getPath());
 		}
@@ -151,20 +193,22 @@ public class Updater {
 				String fileName = ze.getName();
 				File newFile = new File(outputFolder + File.separator + fileName);
 
-				System.out.println("file unzip : " + newFile.getAbsoluteFile());
-
 				// create all non exists folders
 				// else you will hit FileNotFoundException for compressed folder
 				new File(newFile.getParent()).mkdirs();
 
-				FileOutputStream fos = new FileOutputStream(newFile);
+                if (!ze.isDirectory()) {
+                    FileOutputStream fos = new FileOutputStream(newFile);
+                    try {
+                        int len;
+                        while ((len = zis.read(buffer)) > 0) {
+                            fos.write(buffer, 0, len);
+                        }
+                    } finally {
+                        fos.close();
+                    }
+                }
 
-				int len;
-				while ((len = zis.read(buffer)) > 0) {
-					fos.write(buffer, 0, len);
-				}
-
-				fos.close();
 				ze = zis.getNextEntry();
 			}
 
@@ -186,8 +230,9 @@ public class Updater {
 				case "WINDOWS":	
 					Runtime.getRuntime().exec("HearthStats.exe");
 					break;
-				case "OSX":	
-					Desktop.getDesktop().open(new File("HearthStats.app"));
+				case "OSX":
+                    String hearthstatsLocation = System.getProperty("hearthstats.location");
+					Desktop.getDesktop().open(new File(hearthstatsLocation + "/HearthStats.app"));
 					break;
 			}
 		} catch (IOException e) {
